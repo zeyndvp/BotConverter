@@ -83,8 +83,10 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Simpan file di direktori sementara
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp_file:
-        file_path = tmp_file.name
-    await context.bot.get_file(document.file_id).download_to_drive(custom_path=file_path)
+    file_path = tmp_file.name
+    
+    telegram_file = await context.bot.get_file(document.file_id)
+    await telegram_file.download_to_drive(custom_path=file_path)
 
     with open(file_path, 'r', encoding='utf-8') as f:
         numbers = [line.strip() for line in f if line.strip().isdigit()]
