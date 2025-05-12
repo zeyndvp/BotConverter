@@ -1,3 +1,5 @@
+from flask import Flask
+import threading
 from telegram import Update, Document
 from telegram.ext import (
     ApplicationBuilder,
@@ -9,12 +11,28 @@ from telegram.ext import (
 )
 import os
 
+# Membuat instance Flask
+app = Flask(__name__)
+
+# Variabel status bot
+bot_status = "Aktif"
+
+@app.route('/')
+def index():
+    return f"Bot Status: {bot_status}"
+
+# Fungsi Flask untuk menjalankan server
+def run_flask():
+    app.run(host="0.0.0.0", port=5000)
+
 # States
 WAITING_FILENAME, WAITING_CONTACTNAME, WAITING_CHUNK_SIZE, WAITING_START_NUMBER, WAITING_FILE = range(5)
 
 user_data = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global bot_status
+    bot_status = "Aktif"  # Update status bot
     await update.message.reply_text("📝 Masukkan *nama dasar file VCF* (tanpa .vcf):", parse_mode="Markdown")
     return WAITING_FILENAME
 
@@ -121,10 +139,18 @@ END:VCARD
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global bot_status
+    bot_status = "Off"  # Update status bot
     await update.message.reply_text("❌ Operasi dibatalkan.")
     return ConversationHandler.END
 
 if __name__ == '__main__':
+    # Jalankan Flask di thread terpisah
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+
+    # Telegram bot tetap sama
     TOKEN = "8022523573:AAEP41EIKN5svqqqJafV7g7lfPN3PRk7Cyg"
     app = ApplicationBuilder().token(TOKEN).build()
 
