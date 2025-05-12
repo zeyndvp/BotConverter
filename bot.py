@@ -133,7 +133,7 @@ def create_gradio_interface():
         return bot_status
 
     iface = gr.Interface(fn=status_check, inputs=[], outputs="text", title="Status Bot Telegram", live=False, allow_flagging="never")
-    iface.launch(server_name="0.0.0.0", server_port=7860, share=False)
+    iface.launch(server_name="0.0.0.0", server_port=7860)
 
 # === MAIN FUNCTION ===
 async def run_bot():
