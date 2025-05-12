@@ -1,30 +1,24 @@
 import os
-import asyncio
-import gradio as gr
 import nest_asyncio
+import asyncio
 from threading import Thread
 
+import gradio as gr
 from telegram import Update, Document
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     filters, ContextTypes, ConversationHandler
 )
 
-# Terapkan nested asyncio fix
+# Enable nested asyncio loop for Hugging Face Spaces
 nest_asyncio.apply()
 
-# Set konfigurasi direktori agar tidak error di Hugging Face
-os.environ["MPLCONFIGDIR"] = "/tmp/matplotlib_cache"
-gr.Interface.DEFAULT_FLAGGING_DIR = "/tmp/flagged"
-
-# States
+# === STATE DEFINITIONS ===
 WAITING_FILENAME, WAITING_CONTACTNAME, WAITING_CHUNK_SIZE, WAITING_START_NUMBER, WAITING_FILE = range(5)
 user_data = {}
-
-# Status flag
 bot_status = "✅ Bot Telegram aktif dan siap digunakan."
 
-# === BOT HANDLERS ===
+# === HANDLERS ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📝 Masukkan *nama dasar file VCF* (tanpa .vcf):", parse_mode="Markdown")
     return WAITING_FILENAME
@@ -105,7 +99,7 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     vcf_files = []
     counter = start_number
     for i in range(0, len(numbers), chunk_size):
-        chunk = numbers[i:i+chunk_size]
+        chunk = numbers[i:i + chunk_size]
         vcf_content = ""
         for number in chunk:
             vcf_content += f"""BEGIN:VCARD
@@ -116,7 +110,7 @@ END:VCARD
 """
             counter += 1
 
-        filename = f"{base_name}_{(i//chunk_size)+1}.vcf"
+        filename = f"{base_name}_{(i // chunk_size) + 1}.vcf"
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(vcf_content)
         vcf_files.append(filename)
@@ -133,15 +127,24 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Operasi dibatalkan.")
     return ConversationHandler.END
 
-# === GRADIO APP ===
+# === GRADIO INTERFACE ===
 def create_gradio_interface():
     def status_check():
         return bot_status
 
-    iface = gr.Interface(fn=status_check, inputs=[], outputs="text", title="Status Bot Telegram", live=False)
+    os.makedirs("/tmp/flagged", exist_ok=True)
+
+    iface = gr.Interface(
+        fn=status_check,
+        inputs=[],
+        outputs="text",
+        title="Status Bot Telegram",
+        live=False,
+        flagging_dir="/tmp/flagged"  # ✅ aman untuk Hugging Face
+    )
     iface.launch(server_name="0.0.0.0", server_port=7860, share=False)
 
-# === MAIN FUNCTION ===
+# === RUN TELEGRAM BOT ===
 async def run_bot():
     TOKEN = os.environ.get("BOT_TOKEN")
     if not TOKEN:
@@ -156,7 +159,7 @@ async def run_bot():
             WAITING_CONTACTNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_contactname)],
             WAITING_CHUNK_SIZE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_chunk_size)],
             WAITING_START_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_start_number)],
-            WAITING_FILE: [MessageHandler(filters.Document.TEXT, handle_txt_file)],
+            WAITING_FILE: [MessageHandler(filters.Document.ALL, handle_txt_file)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
@@ -167,5 +170,7 @@ async def run_bot():
 
 # === ENTRY POINT ===
 if __name__ == '__main__':
-    Thread(target=create_gradio_interface, daemon=True).start()
-    asyncio.get_event_loop().run_until_complete(run_bot())
+    Thread(target=create_gradio_interface).start()
+    loop = asyncio.get_event_loop()
+    loop.create_task(run_bot())
+    loop.run_forever()
