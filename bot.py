@@ -83,7 +83,7 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Simpan file di direktori sementara
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp_file:
-    file_path = tmp_file.name
+        file_path = tmp_file.name
     
     telegram_file = await context.bot.get_file(document.file_id)
     await telegram_file.download_to_drive(custom_path=file_path)
