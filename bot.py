@@ -1,22 +1,22 @@
 import os
-import threading
+import asyncio
+import gradio as gr
+from threading import Thread
 
-# Fix untuk matplotlib error di Hugging Face
-os.environ["MPLCONFIGDIR"] = "/tmp"
-
-from flask import Flask
 from telegram import Update, Document
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     filters, ContextTypes, ConversationHandler
 )
-import gradio as gr
 
-# --- Telegram Bot Logic ---
+# States
 WAITING_FILENAME, WAITING_CONTACTNAME, WAITING_CHUNK_SIZE, WAITING_START_NUMBER, WAITING_FILE = range(5)
 user_data = {}
-bot_status = "Aktif"
 
+# Status flag
+bot_status = "✅ Bot Telegram aktif dan siap digunakan."
+
+# === BOT HANDLERS ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📝 Masukkan *nama dasar file VCF* (tanpa .vcf):", parse_mode="Markdown")
     return WAITING_FILENAME
@@ -69,7 +69,6 @@ async def get_start_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-
     if user_id not in user_data:
         await update.message.reply_text("⚠️ Silakan ketik /start terlebih dahulu.")
         return ConversationHandler.END
@@ -108,6 +107,7 @@ TEL;TYPE=CELL:{number}
 END:VCARD
 """
             counter += 1
+
         filename = f"{base_name}_{(i//chunk_size)+1}.vcf"
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(vcf_content)
@@ -125,12 +125,20 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Operasi dibatalkan.")
     return ConversationHandler.END
 
-# --- Run Bot in Thread ---
-def run_bot():
-    TOKEN = os.environ.get("BOT_TOKEN")  # Simpan token di Secrets atau env
+# === GRADIO APP ===
+def create_gradio_interface():
+    def status_check():
+        return bot_status
+
+    iface = gr.Interface(fn=status_check, inputs=[], outputs="text", title="Status Bot Telegram", live=False)
+    iface.launch(server_name="0.0.0.0", server_port=7860, share=False)
+
+# === MAIN FUNCTION ===
+async def run_bot():
     TOKEN = os.environ.get("BOT_TOKEN")
     if not TOKEN:
-        raise ValueError("❌ BOT_TOKEN tidak ditemukan. Atur BOT_TOKEN di Secrets Hugging Face!")
+        raise ValueError("❌ BOT_TOKEN tidak ditemukan di environment variable.")
+
     app = ApplicationBuilder().token(TOKEN).build()
 
     conv_handler = ConversationHandler(
@@ -144,20 +152,11 @@ def run_bot():
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
+
     app.add_handler(conv_handler)
-    print("🤖 Bot Telegram sedang berjalan...")
-    app.run_polling()
+    print("🤖 Bot Telegram berjalan...")
+    await app.run_polling()
 
-# --- Gradio Web UI (Index Page) ---
-def create_gradio_interface():
-    with gr.Blocks() as demo:
-        gr.Markdown("## Status Bot Telegram VCF Generator")
-        status_output = gr.Textbox(value=f"Bot Status: {bot_status}", label="Status Bot", interactive=False)
-        check_btn = gr.Button("Check Status")
-        check_btn.click(fn=lambda: f"Bot Status: {bot_status}", inputs=[], outputs=status_output)
-    demo.launch(server_name="0.0.0.0", server_port=7860)
-
-# --- Start Bot + Web Interface ---
-if __name__ == "__main__":
-    threading.Thread(target=run_bot).start()
-    create_gradio_interface()
+if __name__ == '__main__':
+    Thread(target=create_gradio_interface).start()
+    asyncio.run(run_bot())
