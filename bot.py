@@ -128,6 +128,9 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Run Bot in Thread ---
 def run_bot():
     TOKEN = os.environ.get("BOT_TOKEN")  # Simpan token di Secrets atau env
+    TOKEN = os.environ.get("BOT_TOKEN")
+    if not TOKEN:
+        raise ValueError("❌ BOT_TOKEN tidak ditemukan. Atur BOT_TOKEN di Secrets Hugging Face!")
     app = ApplicationBuilder().token(TOKEN).build()
 
     conv_handler = ConversationHandler(
