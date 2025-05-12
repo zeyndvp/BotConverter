@@ -103,7 +103,7 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Buat file VCF
     vcf_files = []
-        counter = start_number + 1
+    counter = start_number + 1
     for number in numbers:
         vcf_content = f"""BEGIN:VCARD
 VERSION:3.0
