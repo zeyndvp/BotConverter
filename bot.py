@@ -34,6 +34,8 @@ async def get_filename(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_contactname(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     contact_name = update.message.text.strip()
+    filename = update.message.text.strip()
+    safe_filename = "".join(c for c in filename if c not in r'<>:"/\|?*')
     if not contact_name:
         await update.message.reply_text("⚠️ Nama kontak tidak boleh kosong.")
         return WAITING_CONTACTNAME
@@ -116,7 +118,7 @@ END:VCARD
 
         # Gunakan nama file yang sesuai input user
         file_index = i // chunk_size + 1
-        vcf_filename = f"{base_name}_{file_index}.vcf"
+        vcf_filename = f"{base_name}{file_index}.vcf"
         vcf_path = os.path.join("/tmp", vcf_filename)
 
         with open(vcf_path, 'w', encoding='utf-8') as vcf_file:
