@@ -1,4 +1,5 @@
 import os
+import re
 import asyncio
 import tempfile
 import gradio as gr
@@ -79,9 +80,9 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return WAITING_FILE
 
     # Simpan file ke temporary file
-    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
-    file_obj = await context.bot.get_file(document.file_id)
-    await file_obj.download_to_drive(tmp_file.name)
+    file_name = sanitize_filename(document.file_name)
+    file_path = os.path.join("/tmp", file_name)
+    await document.download_to_drive(custom_path=file_path)
 
     with open(tmp_file.name, 'r', encoding='utf-8') as f:
         numbers = [line.strip() for line in f if line.strip().isdigit()]
