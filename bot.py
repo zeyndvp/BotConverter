@@ -81,7 +81,8 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Simpan file ke temporary file
     file_name = document.file_name
     file_path = os.path.join("/tmp", file_name)
-    await document.download_to_drive(custom_path=file_path)
+    telegram_file = await context.bot.get_file(document.file_id)
+    await telegram_file.download_to_drive(custom_path=file_path)
 
     with open(tmp_file.name, 'r', encoding='utf-8') as f:
         numbers = [line.strip() for line in f if line.strip().isdigit()]
