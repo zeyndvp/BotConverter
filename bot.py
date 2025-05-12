@@ -103,18 +103,27 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Buat file VCF
     vcf_files = []
-    counter = start_number
-    for i in range(0, len(numbers), chunk_size):
-        chunk = numbers[i:i+chunk_size]
-        vcf_content = ""
-        for number in chunk:
-            vcf_content += f"""BEGIN:VCARD
+        counter = start_number + 1
+    for number in numbers:
+        vcf_content = f"""BEGIN:VCARD
 VERSION:3.0
 FN:{contact_name} {counter}
 TEL;TYPE=CELL:{number}
 END:VCARD
 """
-            counter += 1
+
+        # Buat nama file sesuai nomor
+        safe_name = f"{base_name}-{counter}.vcf"
+        file_path = os.path.join("/tmp", safe_name)
+
+        # Simpan file dan kirim
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(vcf_content)
+
+        await update.message.reply_document(document=open(file_path, 'rb'), filename=safe_name)
+        os.remove(file_path)
+
+        counter += 1
 
         # Gunakan nama file yang sesuai input user
         file_index = i // chunk_size + 1
@@ -127,7 +136,8 @@ END:VCARD
 
     # Kirim file ke user
     for file in vcf_files:
-        await update.message.reply_document(open(file, 'rb'), filename=os.path.basename(file))
+        input_file = InputFile(open(file_path, 'rb'), filename=os.path.basename(file_path))
+        await update.message.reply_document(document=input_file)
         os.remove(file)
 
     # Bersihkan data
