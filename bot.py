@@ -1,5 +1,4 @@
 import os
-import re
 import asyncio
 import tempfile
 import gradio as gr
@@ -80,7 +79,7 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return WAITING_FILE
 
     # Simpan file ke temporary file
-    file_name = sanitize_filename(document.file_name)
+    file_name = document.file_name
     file_path = os.path.join("/tmp", file_name)
     await document.download_to_drive(custom_path=file_path)
 
