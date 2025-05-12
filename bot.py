@@ -126,7 +126,7 @@ END:VCARD
         counter += 1
 
         # Gunakan nama file yang sesuai input user
-        file_index = i // chunk_size + 1
+        file_index = counter
         vcf_filename = f"{base_name}{file_index}.vcf"
         vcf_path = os.path.join("/tmp", vcf_filename)
 
