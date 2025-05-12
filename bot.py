@@ -78,26 +78,28 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ File bukan .txt. Upload file yang benar.")
         return WAITING_FILE
 
-    # Simpan file ke temporary file
+    # Simpan file .txt yang dikirim user
     file_name = document.file_name
     file_path = os.path.join("/tmp", file_name)
     telegram_file = await context.bot.get_file(document.file_id)
     await telegram_file.download_to_drive(custom_path=file_path)
 
+    # Baca nomor dari file
     with open(file_path, 'r', encoding='utf-8') as f:
         numbers = [line.strip() for line in f if line.strip().isdigit()]
-        os.remove(file_path)
-
+    os.remove(file_path)
 
     if not numbers:
         await update.message.reply_text("⚠️ File kosong atau tidak mengandung nomor valid.")
         return ConversationHandler.END
 
+    # Ambil data dari user
     chunk_size = user_data[user_id]["chunk_size"]
     base_name = user_data[user_id]["filename"]
     contact_name = user_data[user_id]["contact_name"]
     start_number = user_data[user_id]["start_number"]
 
+    # Buat file VCF
     vcf_files = []
     counter = start_number
     for i in range(0, len(numbers), chunk_size):
@@ -112,14 +114,21 @@ END:VCARD
 """
             counter += 1
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".vcf", mode='w', encoding='utf-8') as tmp_vcf:
-            tmp_vcf.write(vcf_content)
-            vcf_files.append(tmp_vcf.name)
+        # Gunakan nama file yang sesuai input user
+        file_index = i // chunk_size + 1
+        vcf_filename = f"{base_name}_{file_index}.vcf"
+        vcf_path = os.path.join("/tmp", vcf_filename)
 
+        with open(vcf_path, 'w', encoding='utf-8') as vcf_file:
+            vcf_file.write(vcf_content)
+            vcf_files.append(vcf_path)
+
+    # Kirim file ke user
     for file in vcf_files:
-        await update.message.reply_document(open(file, 'rb'))
+        await update.message.reply_document(open(file, 'rb'), filename=os.path.basename(file))
         os.remove(file)
 
+    # Bersihkan data
     user_data.pop(user_id, None)
     await update.message.reply_text("✅ Semua file berhasil dibuat dan dikirim!")
     return ConversationHandler.END
