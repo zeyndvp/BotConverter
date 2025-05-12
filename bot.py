@@ -80,13 +80,12 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ File bukan .txt. Upload file yang benar.")
         return WAITING_FILE
 
-    # Simpan file .txt yang dikirim user
+    # Simpan file .txt
     file_name = document.file_name
     file_path = os.path.join("/tmp", file_name)
     telegram_file = await context.bot.get_file(document.file_id)
     await telegram_file.download_to_drive(custom_path=file_path)
 
-    # Baca nomor dari file
     with open(file_path, 'r', encoding='utf-8') as f:
         numbers = [line.strip() for line in f if line.strip().isdigit()]
     os.remove(file_path)
@@ -95,52 +94,38 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ File kosong atau tidak mengandung nomor valid.")
         return ConversationHandler.END
 
-    # Ambil data dari user
+    # Ambil data user
     chunk_size = user_data[user_id]["chunk_size"]
     base_name = user_data[user_id]["filename"]
     contact_name = user_data[user_id]["contact_name"]
     start_number = user_data[user_id]["start_number"]
 
-    # Buat file VCF
-    vcf_files = []
-    counter = start_number + 1
-    for number in numbers:
-        vcf_content = f"""BEGIN:VCARD
+    # Bagi nomor menjadi grup
+    chunks = [numbers[i:i + chunk_size] for i in range(0, len(numbers), chunk_size)]
+    file_counter = 1
+    current_number = start_number + 1
+
+    for chunk in chunks:
+        vcf_content = ""
+        for number in chunk:
+            vcf_content += f"""BEGIN:VCARD
 VERSION:3.0
-FN:{contact_name} {counter}
+FN:{contact_name} {current_number}
 TEL;TYPE=CELL:{number}
 END:VCARD
 """
+            current_number += 1
 
-        # Buat nama file sesuai nomor
-        safe_name = f"{base_name}-{counter}.vcf"
-        file_path = os.path.join("/tmp", safe_name)
-
-        # Simpan file dan kirim
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(vcf_content)
-
-        await update.message.reply_document(document=open(file_path, 'rb'), filename=safe_name)
-        os.remove(file_path)
-
-        counter += 1
-
-        # Gunakan nama file yang sesuai input user
-        file_index = counter
-        vcf_filename = f"{base_name}{file_index}.vcf"
+        vcf_filename = f"{base_name}_{file_counter}.vcf"
         vcf_path = os.path.join("/tmp", vcf_filename)
 
-        with open(vcf_path, 'w', encoding='utf-8') as vcf_file:
-            vcf_file.write(vcf_content)
-            vcf_files.append(vcf_path)
+        with open(vcf_path, 'w', encoding='utf-8') as f:
+            f.write(vcf_content)
 
-    # Kirim file ke user
-    for file in vcf_files:
-        input_file = InputFile(open(file_path, 'rb'), filename=os.path.basename(file_path))
-        await update.message.reply_document(document=input_file)
-        os.remove(file)
+        await update.message.reply_document(document=open(vcf_path, 'rb'), filename=vcf_filename)
+        os.remove(vcf_path)
+        file_counter += 1
 
-    # Bersihkan data
     user_data.pop(user_id, None)
     await update.message.reply_text("✅ Semua file berhasil dibuat dan dikirim!")
     return ConversationHandler.END
