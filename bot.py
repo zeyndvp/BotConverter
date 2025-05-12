@@ -1,25 +1,22 @@
 import os
-import tempfile
-import nest_asyncio
 import asyncio
-from threading import Thread
-
+import tempfile
 import gradio as gr
+
 from telegram import Update, Document
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     filters, ContextTypes, ConversationHandler
 )
 
-# Enable nested asyncio loop for Hugging Face Spaces
-nest_asyncio.apply()
-
-# === STATE DEFINITIONS ===
+# States
 WAITING_FILENAME, WAITING_CONTACTNAME, WAITING_CHUNK_SIZE, WAITING_START_NUMBER, WAITING_FILE = range(5)
 user_data = {}
+
+# Status flag
 bot_status = "✅ Bot Telegram aktif dan siap digunakan."
 
-# === HANDLERS ===
+# === BOT HANDLERS ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📝 Masukkan *nama dasar file VCF* (tanpa .vcf):", parse_mode="Markdown")
     return WAITING_FILENAME
@@ -81,16 +78,14 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ File bukan .txt. Upload file yang benar.")
         return WAITING_FILE
 
-    # Simpan file di direktori sementara
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp_file:
-        file_path = tmp_file.name
-    
-    telegram_file = await context.bot.get_file(document.file_id)
-    await telegram_file.download_to_drive(custom_path=file_path)
+    # Simpan file ke temporary file
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+    file_obj = await context.bot.get_file(document.file_id)
+    await file_obj.download_to_drive(tmp_file.name)
 
-    with open(file_path, 'r', encoding='utf-8') as f:
+    with open(tmp_file.name, 'r', encoding='utf-8') as f:
         numbers = [line.strip() for line in f if line.strip().isdigit()]
-    os.remove(file_path)
+    os.remove(tmp_file.name)
 
     if not numbers:
         await update.message.reply_text("⚠️ File kosong atau tidak mengandung nomor valid.")
@@ -104,7 +99,7 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     vcf_files = []
     counter = start_number
     for i in range(0, len(numbers), chunk_size):
-        chunk = numbers[i:i + chunk_size]
+        chunk = numbers[i:i+chunk_size]
         vcf_content = ""
         for number in chunk:
             vcf_content += f"""BEGIN:VCARD
@@ -115,10 +110,9 @@ END:VCARD
 """
             counter += 1
 
-        filename = f"{base_name}_{(i // chunk_size) + 1}.vcf"
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write(vcf_content)
-        vcf_files.append(filename)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".vcf", mode='w', encoding='utf-8') as tmp_vcf:
+            tmp_vcf.write(vcf_content)
+            vcf_files.append(tmp_vcf.name)
 
     for file in vcf_files:
         await update.message.reply_document(open(file, 'rb'))
@@ -132,24 +126,15 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Operasi dibatalkan.")
     return ConversationHandler.END
 
-# === GRADIO INTERFACE ===
+# === GRADIO APP ===
 def create_gradio_interface():
     def status_check():
         return bot_status
 
-    os.makedirs("/tmp/flagged", exist_ok=True)
-
-    iface = gr.Interface(
-        fn=status_check,
-        inputs=[],
-        outputs="text",
-        title="Status Bot Telegram",
-        live=False,
-        flagging_dir="/tmp/flagged"  # ✅ aman untuk Hugging Face
-    )
+    iface = gr.Interface(fn=status_check, inputs=[], outputs="text", title="Status Bot Telegram", live=False, allow_flagging="never")
     iface.launch(server_name="0.0.0.0", server_port=7860, share=False)
 
-# === RUN TELEGRAM BOT ===
+# === MAIN FUNCTION ===
 async def run_bot():
     TOKEN = os.environ.get("BOT_TOKEN")
     if not TOKEN:
@@ -173,9 +158,7 @@ async def run_bot():
     print("🤖 Bot Telegram berjalan...")
     await app.run_polling()
 
-# === ENTRY POINT ===
 if __name__ == '__main__':
-    Thread(target=create_gradio_interface).start()
-    loop = asyncio.get_event_loop()
-    loop.create_task(run_bot())
-    loop.run_forever()
+    import threading
+    threading.Thread(target=create_gradio_interface, daemon=True).start()
+    asyncio.run(run_bot())
