@@ -1,3 +1,5 @@
+import os
+os.environ["MPLCONFIGDIR"] = "/tmp"
 import gradio as gr
 import threading
 from flask import Flask
