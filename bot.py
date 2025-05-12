@@ -1,4 +1,5 @@
 import os
+import tempfile
 import nest_asyncio
 import asyncio
 from threading import Thread
@@ -80,8 +81,10 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ File bukan .txt. Upload file yang benar.")
         return WAITING_FILE
 
-    file = await context.bot.get_file(document.file_id)
-    file_path = await file.download_to_drive()
+    # Simpan file di direktori sementara
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp_file:
+        file_path = tmp_file.name
+    await context.bot.get_file(document.file_id).download_to_drive(custom_path=file_path)
 
     with open(file_path, 'r', encoding='utf-8') as f:
         numbers = [line.strip() for line in f if line.strip().isdigit()]
