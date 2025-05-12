@@ -84,9 +84,10 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_file = await context.bot.get_file(document.file_id)
     await telegram_file.download_to_drive(custom_path=file_path)
 
-    with open(tmp_file.name, 'r', encoding='utf-8') as f:
+    with open(file_path, 'r', encoding='utf-8') as f:
         numbers = [line.strip() for line in f if line.strip().isdigit()]
-    os.remove(tmp_file.name)
+        os.remove(file_path)
+
 
     if not numbers:
         await update.message.reply_text("⚠️ File kosong atau tidak mengandung nomor valid.")
