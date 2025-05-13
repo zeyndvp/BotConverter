@@ -96,23 +96,24 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     vcf_files = []
     vcf_content = ""
     counter = start_number + 1
-    file_index = 1
-
+    
     for i, number in enumerate(numbers, 1):
         vcf_entry = f"""BEGIN:VCARD
-VERSION:3.0
-FN:{contact_name} {counter}
-TEL;TYPE=CELL:{number}
-END:VCARD
-"""
-        vcf_content += vcf_entry
-        counter += 1
+        VERSION:3.0
+        FN:{contact_name} {counter}
+        TEL;TYPE=CELL:{number}
+        END:VCARD
+        """
+        
+    vcf_content += vcf_entry
+    counter += 1
 
-        if i % chunk_size == 0 or i == len(numbers):
-            vcf_filename = f"{base_name}_{file_index}.vcf"
-            vcf_path = os.path.join("/tmp", vcf_filename)
-            with open(vcf_path, 'w', encoding='utf-8') as f:
-                f.write(vcf_content)
+    if i % chunk_size == 0 or i == len(numbers):
+        file_number = counter - chunk_size
+        vcf_filename = f"{base_name}{file_number}.vcf"  # <-- sesuai keinginanmu
+        vcf_path = os.path.join("/tmp", vcf_filename)
+        with open(vcf_path, 'w', encoding='utf-8') as f:
+            f.write(vcf_content)
             vcf_files.append(vcf_path)
             vcf_content = ""
             file_index += 1
