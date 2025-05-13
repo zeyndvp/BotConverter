@@ -1,5 +1,4 @@
 import os
-os.environ['MPLCONFIGDIR'] = '/tmp/matplotlib-cache'
 import asyncio
 import tempfile
 import zipfile
@@ -11,16 +10,17 @@ from telegram.ext import (
     filters, ContextTypes, ConversationHandler
 )
 
-# States
+# === States untuk percakapan ===
 WAITING_FILENAME, WAITING_CONTACTNAME, WAITING_CHUNK_SIZE, WAITING_START_NUMBER, WAITING_FILE = range(5)
 user_data = {}
 
-# Status flag
+# === Status Gradio ===
 bot_status = "✅ Bot Telegram aktif dan siap digunakan."
 
-# === BOT HANDLERS ===
+# === HANDLER BOT ===
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("start command triggered")
+    print("🟢 Perintah /start dipanggil")
     await update.message.reply_text("📝 Masukkan *nama dasar file VCF* (tanpa .vcf):", parse_mode="Markdown")
     return WAITING_FILENAME
 
@@ -81,13 +81,12 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ File bukan .txt. Upload file yang benar.")
         return WAITING_FILE
 
-    # Simpan file .txt yang dikirim user
-    file_name = document.file_name
-    file_path = os.path.join("/tmp", file_name)
+    # Simpan file
+    file_path = os.path.join("/tmp", document.file_name)
     telegram_file = await context.bot.get_file(document.file_id)
     await telegram_file.download_to_drive(custom_path=file_path)
 
-    # Baca nomor dari file
+    # Baca isi file
     with open(file_path, 'r', encoding='utf-8') as f:
         numbers = [line.strip() for line in f if line.strip().isdigit()]
     os.remove(file_path)
@@ -96,13 +95,13 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ File kosong atau tidak mengandung nomor valid.")
         return ConversationHandler.END
 
-    # Ambil data dari user
+    # Ambil data dari sesi
     chunk_size = user_data[user_id]["chunk_size"]
     base_name = user_data[user_id]["filename"]
     contact_name = user_data[user_id]["contact_name"]
     start_number = user_data[user_id]["start_number"]
 
-    # Buat file VCF secara berkelompok
+    # Buat VCF
     vcf_files = []
     vcf_content = ""
     counter = start_number + 1
@@ -127,7 +126,7 @@ END:VCARD
             vcf_content = ""
             file_index += 1
 
-    # Kirim file ZIP jika terlalu banyak
+    # Kirim ZIP jika terlalu banyak file
     if len(vcf_files) > 500:
         zip_path = os.path.join("/tmp", f"{base_name}_all.zip")
         with zipfile.ZipFile(zip_path, 'w') as zipf:
@@ -142,32 +141,26 @@ END:VCARD
             with open(file, 'rb') as f:
                 await update.message.reply_document(document=f, filename=os.path.basename(file))
             os.remove(file)
-            await asyncio.sleep(1.5)  # Hindari rate-limit Telegram
+            await asyncio.sleep(1.5)
 
     user_data.pop(user_id, None)
     await update.message.reply_text("✅ Semua file berhasil dibuat dan dikirim!")
     return ConversationHandler.END
 
-# Fungsi untuk membatalkan
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Operasi dibatalkan.")
     return ConversationHandler.END
 
-# === GRADIO APP ===
-def create_gradio_interface():
-    def status_check():
-        return bot_status
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    print(f"⚠️ ERROR: {context.error}")
 
-    iface = gr.Interface(fn=status_check, inputs=[], outputs="text", title="Status Bot Telegram", live=False, allow_flagging="never")
-    iface.launch(server_name="0.0.0.0", server_port=7860)
-
-# === MAIN FUNCTION ===
+# === FUNGSI BOT UTAMA ===
 async def run_bot():
-    # TOKEN = os.environ.get("BOT_TOKEN")
-    # if not TOKEN:
-    #     raise ValueError("❌ BOT_TOKEN tidak ditemukan di environment variable.")
+    TOKEN = os.getenv("BOT_TOKEN")
+    if not TOKEN:
+        raise ValueError("❌ BOT_TOKEN tidak ditemukan di environment variable.")
 
-    app = ApplicationBuilder().token("8022523573:AAHqvIHf3YRfSw2k38E_0Ti8OVmVSo4ngOM").build()
+    app = ApplicationBuilder().token(TOKEN).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -182,12 +175,35 @@ async def run_bot():
     )
 
     app.add_handler(conv_handler)
-    print("🤖 Bot Telegram berjalan...")
+    app.add_error_handler(error_handler)
+
+    print("🤖 Bot Telegram aktif...")
     await app.run_polling()
 
-# === START SCRIPT ===
+# === MAIN ENTRY POINT ===
 if __name__ == "__main__":
     import nest_asyncio
     nest_asyncio.apply()
-    create_gradio_interface()
-    asyncio.run(run_bot())
+
+    async def main():
+        # Jalankan Gradio interface non-blocking
+        gradio_task = asyncio.create_task(
+            gr.Interface(
+                fn=lambda: bot_status,
+                inputs=[],
+                outputs="text",
+                title="Status Bot Telegram",
+                live=False,
+                allow_flagging="never"
+            ).launch(
+                server_name="0.0.0.0",
+                server_port=7860,
+                prevent_thread_lock=True
+            )
+        )
+
+        # Jalankan bot
+        bot_task = asyncio.create_task(run_bot())
+        await asyncio.gather(gradio_task, bot_task)
+
+    asyncio.run(main())
