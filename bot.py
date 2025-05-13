@@ -35,8 +35,6 @@ async def get_filename(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_contactname(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     contact_name = update.message.text.strip()
-    filename = update.message.text.strip()
-    safe_filename = "".join(c for c in filename if c not in r'<>:"/\|?*')
     if not contact_name:
         await update.message.reply_text("⚠️ Nama kontak tidak boleh kosong.")
         return WAITING_CONTACTNAME
@@ -127,7 +125,7 @@ END:VCARD
             vcf_content = ""
             file_index += 1
 
-    # Optional: Buat ZIP jika file terlalu banyak
+    # Kirim file ZIP jika terlalu banyak
     if len(vcf_files) > 10:
         zip_path = os.path.join("/tmp", f"{base_name}_all.zip")
         with zipfile.ZipFile(zip_path, 'w') as zipf:
@@ -142,11 +140,15 @@ END:VCARD
             with open(file, 'rb') as f:
                 await update.message.reply_document(document=f, filename=os.path.basename(file))
             os.remove(file)
-            await asyncio.sleep(1.5)  # Hindari limit Telegram
+            await asyncio.sleep(1.5)  # Hindari rate-limit Telegram
 
-    # Bersihkan data
     user_data.pop(user_id, None)
     await update.message.reply_text("✅ Semua file berhasil dibuat dan dikirim!")
+    return ConversationHandler.END
+
+# Fungsi untuk membatalkan
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ Operasi dibatalkan.")
     return ConversationHandler.END
 
 # === GRADIO APP ===
@@ -165,12 +167,6 @@ async def run_bot():
 
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # === BOT HANDLERS ===
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Operasi dibatalkan.")
-    return ConversationHandler.END
-
-
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
@@ -187,8 +183,9 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("🤖 Bot Telegram berjalan...")
     await app.run_polling()
 
+# === START SCRIPT ===
 if __name__ == "__main__":
-    import asyncio
     import nest_asyncio
     nest_asyncio.apply()
+    create_gradio_interface()
     asyncio.run(run_bot())
