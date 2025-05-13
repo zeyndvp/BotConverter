@@ -1,6 +1,7 @@
 import os
 import asyncio
 import tempfile
+import zipfile
 import gradio as gr
 
 from telegram import Update, Document
@@ -80,12 +81,13 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ File bukan .txt. Upload file yang benar.")
         return WAITING_FILE
 
-    # Simpan file .txt
+    # Simpan file .txt yang dikirim user
     file_name = document.file_name
     file_path = os.path.join("/tmp", file_name)
     telegram_file = await context.bot.get_file(document.file_id)
     await telegram_file.download_to_drive(custom_path=file_path)
 
+    # Baca nomor dari file
     with open(file_path, 'r', encoding='utf-8') as f:
         numbers = [line.strip() for line in f if line.strip().isdigit()]
     os.remove(file_path)
@@ -94,44 +96,57 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ File kosong atau tidak mengandung nomor valid.")
         return ConversationHandler.END
 
-    # Ambil data user
+    # Ambil data dari user
     chunk_size = user_data[user_id]["chunk_size"]
     base_name = user_data[user_id]["filename"]
     contact_name = user_data[user_id]["contact_name"]
     start_number = user_data[user_id]["start_number"]
 
-    # Bagi nomor menjadi grup
-    chunks = [numbers[i:i + chunk_size] for i in range(0, len(numbers), chunk_size)]
-    file_counter = 1
-    current_number = start_number + 1
+    # Buat file VCF secara berkelompok
+    vcf_files = []
+    vcf_content = ""
+    counter = start_number + 1
+    file_index = 1
 
-    for chunk in chunks:
-        vcf_content = ""
-        for number in chunk:
-            vcf_content += f"""BEGIN:VCARD
+    for i, number in enumerate(numbers, 1):
+        vcf_entry = f"""BEGIN:VCARD
 VERSION:3.0
-FN:{contact_name} {current_number}
+FN:{contact_name} {counter}
 TEL;TYPE=CELL:{number}
 END:VCARD
 """
-            current_number += 1
+        vcf_content += vcf_entry
+        counter += 1
 
-        vcf_filename = f"{base_name}_{file_counter}.vcf"
-        vcf_path = os.path.join("/tmp", vcf_filename)
+        if i % chunk_size == 0 or i == len(numbers):
+            vcf_filename = f"{base_name}_{file_index}.vcf"
+            vcf_path = os.path.join("/tmp", vcf_filename)
+            with open(vcf_path, 'w', encoding='utf-8') as f:
+                f.write(vcf_content)
+            vcf_files.append(vcf_path)
+            vcf_content = ""
+            file_index += 1
 
-        with open(vcf_path, 'w', encoding='utf-8') as f:
-            f.write(vcf_content)
+    # Optional: Buat ZIP jika file terlalu banyak
+    if len(vcf_files) > 10:
+        zip_path = os.path.join("/tmp", f"{base_name}_all.zip")
+        with zipfile.ZipFile(zip_path, 'w') as zipf:
+            for file in vcf_files:
+                zipf.write(file, os.path.basename(file))
+                os.remove(file)
+        with open(zip_path, 'rb') as f:
+            await update.message.reply_document(document=f, filename=os.path.basename(zip_path))
+        os.remove(zip_path)
+    else:
+        for file in vcf_files:
+            with open(file, 'rb') as f:
+                await update.message.reply_document(document=f, filename=os.path.basename(file))
+            os.remove(file)
+            await asyncio.sleep(1.5)  # Hindari limit Telegram
 
-        await update.message.reply_document(document=open(vcf_path, 'rb'), filename=vcf_filename)
-        os.remove(vcf_path)
-        file_counter += 1
-
+    # Bersihkan data
     user_data.pop(user_id, None)
     await update.message.reply_text("✅ Semua file berhasil dibuat dan dikirim!")
-    return ConversationHandler.END
-
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Operasi dibatalkan.")
     return ConversationHandler.END
 
 # === GRADIO APP ===
