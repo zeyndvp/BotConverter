@@ -9,7 +9,7 @@ from telegram.ext import (
     filters, ContextTypes, ConversationHandler
 )
 
-WAITING_FILENAME, WAITING_CONTACTNAME, WAITING_CHUNK_SIZE, WAITING_START_NUMBER, WAITING_FILE = range(5)
+WAITING_FILENAME, WAITING_CONTACTNAME, WAITING_CHUNK_SIZE, WAITING_START_NUMBER, WAITING_INPUT_METHOD, WAITING_NUMBERS = range(6)
 user_data = {}
 bot_status = "✅ Bot Telegram aktif dan siap digunakan."
 
@@ -62,19 +62,32 @@ async def get_start_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Masukkan angka valid sebagai nomor awal.")
         return WAITING_START_NUMBER
     user_data[user_id]["start_number"] = start_number
-    await update.message.reply_text("📄 Upload file `.txt` berisi nomor telepon (satu nomor per baris):")
-    return WAITING_FILE
+    await update.message.reply_text(
+        "📥 Sekarang pilih metode input:\n\n"
+        "1. Kirim *file .txt* berisi nomor\n"
+        "2. Atau ketik/forward daftar nomor langsung di chat (satu per baris).",
+        parse_mode="Markdown"
+    )
+    return WAITING_INPUT_METHOD
+
+async def handle_input_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+
+    if update.message.document:
+        return await handle_txt_file(update, context)
+    elif update.message.text:
+        return await handle_numbers_text(update, context)
+    else:
+        await update.message.reply_text("⚠️ Harap kirim file .txt atau daftar nomor langsung.")
+        return WAITING_INPUT_METHOD
 
 async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    if user_id not in user_data:
-        await update.message.reply_text("⚠️ Silakan ketik /start terlebih dahulu.")
-        return ConversationHandler.END
-
     document: Document = update.message.document
+
     if document.mime_type != 'text/plain':
         await update.message.reply_text("❌ File bukan .txt.")
-        return WAITING_FILE
+        return WAITING_INPUT_METHOD
 
     file_path = os.path.join("/tmp", document.file_name)
     telegram_file = await context.bot.get_file(document.file_id)
@@ -84,39 +97,54 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         numbers = [line.strip() for line in f if line.strip().isdigit()]
     os.remove(file_path)
 
+    return await process_numbers(update, context, numbers)
+
+async def handle_numbers_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    raw_text = update.message.text
+    numbers = [line.strip() for line in raw_text.splitlines() if line.strip().isdigit()]
+
     if not numbers:
-        await update.message.reply_text("⚠️ File kosong atau tidak mengandung nomor valid.")
+        await update.message.reply_text("⚠️ Tidak ditemukan nomor valid.")
+        return WAITING_INPUT_METHOD
+
+    return await process_numbers(update, context, numbers)
+
+async def process_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE, numbers: list[str]):
+    user_id = update.message.from_user.id
+    data = user_data.get(user_id)
+    if not data:
+        await update.message.reply_text("⚠️ Silakan mulai dengan /start.")
         return ConversationHandler.END
 
-    chunk_size = user_data[user_id]["chunk_size"]
-    base_name = user_data[user_id]["filename"]
-    contact_name = user_data[user_id]["contact_name"]
-    start_number = user_data[user_id]["start_number"]
+    chunk_size = data["chunk_size"]
+    base_name = data["filename"]
+    contact_name = data["contact_name"]
+    start_number = data["start_number"]
 
     vcf_files = []
     vcf_content = ""
-    counter = start_number + 1
-    
+    contact_counter = start_number + 1
+    file_counter = 1
+
     for i, number in enumerate(numbers, 1):
         vcf_entry = f"""BEGIN:VCARD
-        VERSION:3.0
-        FN:{contact_name} {counter}
-        TEL;TYPE=CELL:{number}
-        END:VCARD
-        """
-        
-    vcf_content += vcf_entry
-    counter += 1
+VERSION:3.0
+FN:{contact_name} {contact_counter}
+TEL;TYPE=CELL:{number}
+END:VCARD
+"""
+        vcf_content += vcf_entry
+        contact_counter += 1
 
-    if i % chunk_size == 0 or i == len(numbers):
-        file_number = counter - chunk_size
-        vcf_filename = f"{base_name}{file_number}.vcf"  # <-- sesuai keinginanmu
-        vcf_path = os.path.join("/tmp", vcf_filename)
-        with open(vcf_path, 'w', encoding='utf-8') as f:
-            f.write(vcf_content)
+        if i % chunk_size == 0 or i == len(numbers):
+            vcf_filename = f"{base_name}_{file_counter}.vcf"
+            vcf_path = os.path.join("/tmp", vcf_filename)
+            with open(vcf_path, 'w', encoding='utf-8') as f:
+                f.write(vcf_content)
             vcf_files.append(vcf_path)
             vcf_content = ""
-            file_index += 1
+            file_counter += 1
 
     if len(vcf_files) > 500:
         zip_path = os.path.join("/tmp", f"{base_name}_all.zip")
@@ -140,6 +168,7 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Operasi dibatalkan.")
+    user_data.pop(update.message.from_user.id, None)
     return ConversationHandler.END
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
@@ -158,7 +187,7 @@ async def run_bot():
             WAITING_CONTACTNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_contactname)],
             WAITING_CHUNK_SIZE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_chunk_size)],
             WAITING_START_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_start_number)],
-            WAITING_FILE: [MessageHandler(filters.Document.ALL, handle_txt_file)],
+            WAITING_INPUT_METHOD: [MessageHandler(filters.ALL, handle_input_method)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
@@ -181,7 +210,7 @@ if __name__ == "__main__":
             outputs="text",
             title="Status Bot Telegram",
             live=False,
-            flagging_mode="never"  # updated to avoid warning
+            flagging_mode="never"
         )
 
         gradio_task = asyncio.to_thread(gradio_interface.launch, server_name="0.0.0.0", server_port=7860, share=False)
