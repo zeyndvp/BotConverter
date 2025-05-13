@@ -127,7 +127,7 @@ END:VCARD
             file_index += 1
 
     # Kirim file ZIP jika terlalu banyak
-    if len(vcf_files) > 10:
+    if len(vcf_files) > 500:
         zip_path = os.path.join("/tmp", f"{base_name}_all.zip")
         with zipfile.ZipFile(zip_path, 'w') as zipf:
             for file in vcf_files:
@@ -162,7 +162,7 @@ def create_gradio_interface():
 
 # === MAIN FUNCTION ===
 async def run_bot():
-    TOKEN = os.environ.get("BOT_TOKEN")
+    TOKEN = os.environ.get(BOT_TOKEN)
     if not TOKEN:
         raise ValueError("❌ BOT_TOKEN tidak ditemukan di environment variable.")
 
