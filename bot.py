@@ -1,4 +1,5 @@
 import os
+os.environ['MPLCONFIGDIR'] = '/tmp/matplotlib-cache'
 import asyncio
 import tempfile
 import zipfile
