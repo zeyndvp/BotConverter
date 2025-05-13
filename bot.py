@@ -14,7 +14,6 @@ from telegram.ext import (
 WAITING_FILENAME, WAITING_CONTACTNAME, WAITING_CHUNK_SIZE, WAITING_START_NUMBER, WAITING_INPUT_METHOD = range(5)
 bot_status = "✅ Bot Telegram aktif dan siap digunakan."
 
-# Gunakan context.user_data, bukan global
 def is_valid_phone(number: str) -> bool:
     try:
         number = number.strip()
@@ -133,7 +132,10 @@ async def process_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE, nu
     contact_counter = 1
     file_counter = start_number
 
-    for i, number in enumerate(numbers, 1):
+    for i, raw_number in enumerate(numbers, 1):
+        number = raw_number.strip()
+        if not number.startswith("+"):
+            number = "+" + number
         vcf_entry = f"""BEGIN:VCARD
 VERSION:3.0
 FN:{contact_name} {contact_counter}
