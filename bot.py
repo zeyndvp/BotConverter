@@ -162,11 +162,11 @@ def create_gradio_interface():
 
 # === MAIN FUNCTION ===
 async def run_bot():
-    TOKEN = os.environ.get("BOT_TOKEN")
-    if not TOKEN:
-        raise ValueError("❌ BOT_TOKEN tidak ditemukan di environment variable.")
+    # TOKEN = os.environ.get("BOT_TOKEN")
+    # if not TOKEN:
+    #     raise ValueError("❌ BOT_TOKEN tidak ditemukan di environment variable.")
 
-    app = ApplicationBuilder().token(TOKEN).build()
+    app = ApplicationBuilder().token("8022523573:AAHqvIHf3YRfSw2k38E_0Ti8OVmVSo4ngOM").build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
