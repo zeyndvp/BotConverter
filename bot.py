@@ -162,7 +162,7 @@ def create_gradio_interface():
 
 # === MAIN FUNCTION ===
 async def run_bot():
-    TOKEN = os.environ.get("8022523573:AAEP41EIKN5svqqqJafV7g7lfPN3PRk7Cyg")
+    TOKEN = os.environ.get("BOT_TOKEN")
     if not TOKEN:
         raise ValueError("❌ BOT_TOKEN tidak ditemukan di environment variable.")
 
