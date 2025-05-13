@@ -9,9 +9,6 @@ from telegram.ext import (
     filters, ContextTypes, ConversationHandler
 )
 
-from dotenv import load_dotenv
-load_dotenv()
-
 WAITING_FILENAME, WAITING_CONTACTNAME, WAITING_CHUNK_SIZE, WAITING_START_NUMBER, WAITING_FILE = range(5)
 user_data = {}
 bot_status = "✅ Bot Telegram aktif dan siap digunakan."
