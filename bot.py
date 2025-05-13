@@ -49,7 +49,7 @@ async def get_chunk_size(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Masukkan angka yang valid.")
         return WAITING_CHUNK_SIZE
     user_data[user_id]["chunk_size"] = chunk_size
-    await update.message.reply_text("🔢 Masukkan nomor awal untuk penomoran kontak (misal: 40):")
+    await update.message.reply_text("🔢 Masukkan nomor awal untuk penomoran *file VCF* (misal: 40):")
     return WAITING_START_NUMBER
 
 async def get_start_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -71,8 +71,6 @@ async def get_start_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return WAITING_INPUT_METHOD
 
 async def handle_input_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-
     if update.message.document:
         return await handle_txt_file(update, context)
     elif update.message.text:
@@ -124,8 +122,8 @@ async def process_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE, nu
 
     vcf_files = []
     vcf_content = ""
-    contact_counter = start_number + 1
-    file_counter = start_number + 1
+    contact_counter = 1               # Kontak selalu dimulai dari 1
+    file_counter = start_number      # File dimulai dari start_number
 
     for i, number in enumerate(numbers, 1):
         vcf_entry = f"""BEGIN:VCARD
