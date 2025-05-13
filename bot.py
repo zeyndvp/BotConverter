@@ -20,6 +20,7 @@ bot_status = "✅ Bot Telegram aktif dan siap digunakan."
 
 # === BOT HANDLERS ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("start command triggered")
     await update.message.reply_text("📝 Masukkan *nama dasar file VCF* (tanpa .vcf):", parse_mode="Markdown")
     return WAITING_FILENAME
 
