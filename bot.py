@@ -17,6 +17,9 @@ bot_status = "✅ Bot Telegram aktif dan siap digunakan."
 # Gunakan context.user_data, bukan global
 def is_valid_phone(number: str) -> bool:
     try:
+        number = number.strip()
+        if not number.startswith("+"):
+            number = "+" + number
         parsed = phonenumbers.parse(number, None)
         return phonenumbers.is_valid_number(parsed)
     except phonenumbers.NumberParseException:
