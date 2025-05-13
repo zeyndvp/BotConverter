@@ -1,7 +1,9 @@
 import os
+import re
 import asyncio
 import tempfile
 import zipfile
+import phonenumbers
 import gradio as gr
 from telegram import Update, Document
 from telegram.ext import (
@@ -10,8 +12,15 @@ from telegram.ext import (
 )
 
 WAITING_FILENAME, WAITING_CONTACTNAME, WAITING_CHUNK_SIZE, WAITING_START_NUMBER, WAITING_INPUT_METHOD = range(5)
-user_data = {}
 bot_status = "✅ Bot Telegram aktif dan siap digunakan."
+
+# Gunakan context.user_data, bukan global
+def is_valid_phone(number: str) -> bool:
+    try:
+        parsed = phonenumbers.parse(number, None)
+        return phonenumbers.is_valid_number(parsed)
+    except phonenumbers.NumberParseException:
+        return False
 
 # === HANDLERS ===
 
@@ -20,27 +29,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return WAITING_FILENAME
 
 async def get_filename(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
     filename = update.message.text.strip()
     if not filename:
         await update.message.reply_text("⚠️ Nama file tidak boleh kosong.")
         return WAITING_FILENAME
-    user_data[user_id] = {"filename": filename}
+    context.user_data["filename"] = filename
     await update.message.reply_text("👤 Masukkan *nama dasar kontak* (misal: Siswa):", parse_mode="Markdown")
     return WAITING_CONTACTNAME
 
 async def get_contactname(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
     contact_name = update.message.text.strip()
     if not contact_name:
         await update.message.reply_text("⚠️ Nama kontak tidak boleh kosong.")
         return WAITING_CONTACTNAME
-    user_data[user_id]["contact_name"] = contact_name
+    context.user_data["contact_name"] = contact_name
     await update.message.reply_text("🔢 Masukkan jumlah *nomor per file VCF* (misal: 100):", parse_mode="Markdown")
     return WAITING_CHUNK_SIZE
 
 async def get_chunk_size(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
     try:
         chunk_size = int(update.message.text.strip())
         if chunk_size < 1:
@@ -48,12 +54,11 @@ async def get_chunk_size(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("⚠️ Masukkan angka yang valid.")
         return WAITING_CHUNK_SIZE
-    user_data[user_id]["chunk_size"] = chunk_size
-    await update.message.reply_text("🔢 Masukkan nomor awal untuk penomoran *file VCF* (misal: 40):", parse_mode="Markdown")
+    context.user_data["chunk_size"] = chunk_size
+    await update.message.reply_text("🔢 Masukkan nomor awal untuk penomoran *file VCF* (misal: 40):")
     return WAITING_START_NUMBER
 
 async def get_start_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
     try:
         start_number = int(update.message.text.strip())
         if start_number < 0:
@@ -61,7 +66,7 @@ async def get_start_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("⚠️ Masukkan angka valid sebagai nomor awal.")
         return WAITING_START_NUMBER
-    user_data[user_id]["start_number"] = start_number
+    context.user_data["start_number"] = start_number
     await update.message.reply_text(
         "📥 Sekarang pilih metode input:\n\n"
         "1. Kirim *file .txt* berisi nomor\n"
@@ -80,58 +85,50 @@ async def handle_input_method(update: Update, context: ContextTypes.DEFAULT_TYPE
         return WAITING_INPUT_METHOD
 
 async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
     document: Document = update.message.document
 
     if document.mime_type != 'text/plain':
         await update.message.reply_text("❌ File bukan .txt.")
         return WAITING_INPUT_METHOD
 
-    file_path = os.path.join("/tmp", document.file_name)
+    file_path = os.path.join(tempfile.gettempdir(), document.file_name)
     telegram_file = await context.bot.get_file(document.file_id)
     await telegram_file.download_to_drive(custom_path=file_path)
 
     with open(file_path, 'r', encoding='utf-8') as f:
-        numbers = [
-            line.strip()
-            for line in f
-            if line.strip() and not any(c.isalpha() for c in line)
-        ]
+        raw_lines = [line.strip() for line in f if line.strip()]
     os.remove(file_path)
+
+    numbers = [line for line in raw_lines if is_valid_phone(line)]
+    if not numbers:
+        await update.message.reply_text("❌ Tidak ditemukan nomor telepon yang valid.")
+        return WAITING_INPUT_METHOD
 
     return await process_numbers(update, context, numbers)
 
 async def handle_numbers_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    raw_text = update.message.text
-    numbers = [
-        line.strip()
-        for line in raw_text.splitlines()
-        if line.strip() and not any(c.isalpha() for c in line)
-    ]
+    raw_lines = [line.strip() for line in update.message.text.splitlines() if line.strip()]
+    numbers = [line for line in raw_lines if is_valid_phone(line)]
 
     if not numbers:
-        await update.message.reply_text("⚠️ Tidak ditemukan nomor valid.")
+        await update.message.reply_text("❌ Tidak ditemukan nomor telepon yang valid.")
         return WAITING_INPUT_METHOD
 
     return await process_numbers(update, context, numbers)
 
 async def process_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE, numbers: list[str]):
-    user_id = update.message.from_user.id
-    data = user_data.get(user_id)
-    if not data:
-        await update.message.reply_text("⚠️ Silakan mulai dengan /start.")
-        return ConversationHandler.END
-
+    data = context.user_data
     chunk_size = data["chunk_size"]
     base_name = data["filename"]
     contact_name = data["contact_name"]
-    file_start_number = data["start_number"]
+    start_number = data["start_number"]
+
+    await update.message.reply_text("⏳ Sedang membuat file VCF, mohon tunggu...")
 
     vcf_files = []
     vcf_content = ""
     contact_counter = 1
-    file_counter = file_start_number
+    file_counter = start_number
 
     for i, number in enumerate(numbers, 1):
         vcf_entry = f"""BEGIN:VCARD
@@ -145,7 +142,7 @@ END:VCARD
 
         if i % chunk_size == 0 or i == len(numbers):
             vcf_filename = f"{base_name}_{file_counter}.vcf"
-            vcf_path = os.path.join("/tmp", vcf_filename)
+            vcf_path = os.path.join(tempfile.gettempdir(), vcf_filename)
             with open(vcf_path, 'w', encoding='utf-8') as f:
                 f.write(vcf_content)
             vcf_files.append(vcf_path)
@@ -153,7 +150,7 @@ END:VCARD
             file_counter += 1
 
     if len(vcf_files) > 500:
-        zip_path = os.path.join("/tmp", f"{base_name}_all.zip")
+        zip_path = os.path.join(tempfile.gettempdir(), f"{base_name}_all.zip")
         with zipfile.ZipFile(zip_path, 'w') as zipf:
             for file in vcf_files:
                 zipf.write(file, os.path.basename(file))
@@ -168,13 +165,13 @@ END:VCARD
             os.remove(file)
             await asyncio.sleep(1.5)
 
-    user_data.pop(user_id, None)
+    context.user_data.clear()
     await update.message.reply_text("✅ Semua file berhasil dibuat dan dikirim!")
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Operasi dibatalkan.")
-    user_data.pop(update.message.from_user.id, None)
+    context.user_data.clear()
     return ConversationHandler.END
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
@@ -183,7 +180,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 async def run_bot():
     TOKEN = os.getenv("BOT_TOKEN")
     if not TOKEN:
-        raise ValueError("❌ BOT_TOKEN tidak ditemukan di .env")
+        raise ValueError("❌ BOT_TOKEN tidak ditemukan di environment variable.")
     app = ApplicationBuilder().token(TOKEN).build()
 
     conv_handler = ConversationHandler(
