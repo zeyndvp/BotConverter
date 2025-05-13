@@ -125,7 +125,7 @@ async def process_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE, nu
     vcf_files = []
     vcf_content = ""
     contact_counter = start_number + 1
-    file_counter = 1
+    file_counter = start_number + 1
 
     for i, number in enumerate(numbers, 1):
         vcf_entry = f"""BEGIN:VCARD
