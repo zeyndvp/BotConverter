@@ -165,6 +165,12 @@ async def run_bot():
 
     app = ApplicationBuilder().token(TOKEN).build()
 
+    # === BOT HANDLERS ===
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ Operasi dibatalkan.")
+    return ConversationHandler.END
+
+
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
