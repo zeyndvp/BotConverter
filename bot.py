@@ -9,7 +9,7 @@ from telegram.ext import (
     filters, ContextTypes, ConversationHandler
 )
 
-WAITING_FILENAME, WAITING_CONTACTNAME, WAITING_CHUNK_SIZE, WAITING_START_NUMBER, WAITING_INPUT_METHOD, WAITING_NUMBERS = range(6)
+WAITING_FILENAME, WAITING_CONTACTNAME, WAITING_CHUNK_SIZE, WAITING_START_NUMBER, WAITING_INPUT_METHOD = range(5)
 user_data = {}
 bot_status = "✅ Bot Telegram aktif dan siap digunakan."
 
@@ -49,7 +49,7 @@ async def get_chunk_size(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Masukkan angka yang valid.")
         return WAITING_CHUNK_SIZE
     user_data[user_id]["chunk_size"] = chunk_size
-    await update.message.reply_text("🔢 Masukkan nomor awal untuk penomoran *file VCF* (misal: 40):")
+    await update.message.reply_text("🔢 Masukkan nomor awal untuk penomoran *file VCF* (misal: 40):", parse_mode="Markdown")
     return WAITING_START_NUMBER
 
 async def get_start_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -92,7 +92,11 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await telegram_file.download_to_drive(custom_path=file_path)
 
     with open(file_path, 'r', encoding='utf-8') as f:
-        numbers = [line.strip() for line in f if line.strip().isdigit()]
+        numbers = [
+            line.strip()
+            for line in f
+            if line.strip() and not any(c.isalpha() for c in line)
+        ]
     os.remove(file_path)
 
     return await process_numbers(update, context, numbers)
@@ -100,7 +104,11 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_numbers_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     raw_text = update.message.text
-    numbers = [line.strip() for line in raw_text.splitlines() if line.strip().isdigit()]
+    numbers = [
+        line.strip()
+        for line in raw_text.splitlines()
+        if line.strip() and not any(c.isalpha() for c in line)
+    ]
 
     if not numbers:
         await update.message.reply_text("⚠️ Tidak ditemukan nomor valid.")
@@ -118,12 +126,12 @@ async def process_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE, nu
     chunk_size = data["chunk_size"]
     base_name = data["filename"]
     contact_name = data["contact_name"]
-    start_number = data["start_number"]
+    file_start_number = data["start_number"]
 
     vcf_files = []
     vcf_content = ""
-    contact_counter = 1               # Kontak selalu dimulai dari 1
-    file_counter = start_number      # File dimulai dari start_number
+    contact_counter = 1
+    file_counter = file_start_number
 
     for i, number in enumerate(numbers, 1):
         vcf_entry = f"""BEGIN:VCARD
