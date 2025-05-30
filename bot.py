@@ -11,35 +11,31 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     filters, ContextTypes, ConversationHandler
 )
+from pymongo import MongoClient
 
 # === Konstanta dan Status ===
 WAITING_FILENAME, WAITING_CONTACTNAME, WAITING_CHUNK_SIZE, WAITING_START_NUMBER, WAITING_INPUT_METHOD = range(5)
 OWNER_ID = 7238904265
-WHITELIST_PATH = "whitelist.json"
 bot_status = "✅ Bot Telegram aktif dan siap digunakan."
 
+# === Koneksi MongoDB ===
+MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://zeyndevv:zeyn123663@@cluster0.vt3xi.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+client = MongoClient(MONGO_URI)
+db = client["vcf_bot"]
+whitelist_col = db["whitelist"]
+
 # === Fungsi Whitelist ===
-def load_whitelist():
-    try:
-        with open(WHITELIST_PATH, "r") as f:
-            return set(json.load(f))
-    except:
-        return set()
-
-def save_whitelist(whitelist):
-    with open(WHITELIST_PATH, "w") as f:
-        json.dump(list(whitelist), f)
-
 def is_owner(user_id):
     return user_id == OWNER_ID
 
 def is_whitelisted(user_id):
-    return user_id in WHITELIST
+    return whitelist_col.find_one({"user_id": user_id}) is not None or is_owner(user_id)
 
-WHITELIST = load_whitelist()
-WHITELIST.add(OWNER_ID)
-save_whitelist(WHITELIST)
+def add_to_whitelist_db(user_id: int):
+    if not is_whitelisted(user_id):
+        whitelist_col.insert_one({"user_id": user_id})
 
+# === Fungsi Validasi Nomor ===
 def is_valid_phone(number: str) -> bool:
     try:
         number = number.strip()
@@ -50,14 +46,13 @@ def is_valid_phone(number: str) -> bool:
     except phonenumbers.NumberParseException:
         return False
 
-# === Handler ===
+# === Handler Utama ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_whitelisted(user_id):
         await update.message.reply_text(
             f"🚫 Kamu tidak diizinkan menggunakan bot ini.\n🆔 ID kamu: `{user_id}`",
-            parse_mode="Markdown"
-        )
+            parse_mode="Markdown")
         return ConversationHandler.END
 
     await update.message.reply_text("📝 Masukkan *nama dasar file VCF* (tanpa .vcf):", parse_mode="Markdown")
@@ -83,10 +78,10 @@ async def get_contactname(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i in range(0, len(parts), 2):
         try:
             name = parts[i]
-            count = int(parts[i + 1])
+            count = int(parts[i+1])
             contact_plan.append((name, count))
         except:
-            await update.message.reply_text(f"⚠️ Format salah di bagian: {parts[i]} | {parts[i+1]}")
+            await update.message.reply_text("⚠️ Format salah di bagian: " + parts[i] + " | " + parts[i+1])
             return WAITING_CONTACTNAME
 
     context.user_data["contact_plan"] = contact_plan
@@ -101,7 +96,6 @@ async def get_chunk_size(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("⚠️ Masukkan angka yang valid.")
         return WAITING_CHUNK_SIZE
-
     context.user_data["chunk_size"] = chunk_size
     await update.message.reply_text("🔢 Masukkan nomor awal untuk penomoran *file VCF* (misal: 1):")
     return WAITING_START_NUMBER
@@ -120,8 +114,7 @@ async def get_start_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📥 Sekarang kirim daftar nomor:\n\n"
         "1. Kirim *file .txt*\n"
         "2. Atau langsung ketik/forward di chat (1 nomor per baris).",
-        parse_mode="Markdown"
-    )
+        parse_mode="Markdown")
     return WAITING_INPUT_METHOD
 
 async def handle_input_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -142,16 +135,13 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_path = os.path.join(tempfile.gettempdir(), document.file_name)
     telegram_file = await context.bot.get_file(document.file_id)
     await telegram_file.download_to_drive(custom_path=file_path)
-
     with open(file_path, 'r', encoding='utf-8') as f:
         raw_lines = [line.strip() for line in f if line.strip()]
     os.remove(file_path)
-
     numbers = [line for line in raw_lines if is_valid_phone(line)]
     if not numbers:
         await update.message.reply_text("❌ Tidak ditemukan nomor telepon yang valid.")
         return WAITING_INPUT_METHOD
-
     return await process_numbers(update, context, numbers)
 
 async def handle_numbers_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -239,8 +229,7 @@ async def add_to_whitelist(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     try:
         new_user_id = int(context.args[0])
-        WHITELIST.add(new_user_id)
-        save_whitelist(WHITELIST)
+        add_to_whitelist_db(new_user_id)
         await update.message.reply_text(f"✅ User ID {new_user_id} berhasil ditambahkan ke whitelist.")
     except:
         await update.message.reply_text("⚠️ Gunakan format: /adduser <id_telegram>")
@@ -269,7 +258,6 @@ async def run_bot():
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("adduser", add_to_whitelist))
     app.add_error_handler(error_handler)
-
     await app.run_polling()
 
 # === START ===
