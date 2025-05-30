@@ -56,7 +56,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_whitelisted(user_id):
         await update.message.reply_text(
             f"🚫 Kamu tidak diizinkan menggunakan bot ini.\n🆔 ID kamu: `{user_id}`",
-            parse_mode="Markdown")
+            parse_mode="Markdown"
+        )
         return ConversationHandler.END
 
     await update.message.reply_text("📝 Masukkan *nama dasar file VCF* (tanpa .vcf):", parse_mode="Markdown")
@@ -82,10 +83,10 @@ async def get_contactname(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i in range(0, len(parts), 2):
         try:
             name = parts[i]
-            count = int(parts[i+1])
+            count = int(parts[i + 1])
             contact_plan.append((name, count))
         except:
-            await update.message.reply_text("⚠️ Format salah di bagian: " + parts[i] + " | " + parts[i+1])
+            await update.message.reply_text(f"⚠️ Format salah di bagian: {parts[i]} | {parts[i+1]}")
             return WAITING_CONTACTNAME
 
     context.user_data["contact_plan"] = contact_plan
@@ -100,6 +101,7 @@ async def get_chunk_size(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("⚠️ Masukkan angka yang valid.")
         return WAITING_CHUNK_SIZE
+
     context.user_data["chunk_size"] = chunk_size
     await update.message.reply_text("🔢 Masukkan nomor awal untuk penomoran *file VCF* (misal: 1):")
     return WAITING_START_NUMBER
@@ -112,12 +114,14 @@ async def get_start_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("⚠️ Masukkan angka valid sebagai nomor awal.")
         return WAITING_START_NUMBER
+
     context.user_data["start_number"] = start_number
     await update.message.reply_text(
-        "📥 Sekarang kirim daftar nomor:
-1. Kirim *file .txt*
-2. Atau langsung ketik/forward di chat (1 nomor per baris).",
-        parse_mode="Markdown")
+        "📥 Sekarang kirim daftar nomor:\n\n"
+        "1. Kirim *file .txt*\n"
+        "2. Atau langsung ketik/forward di chat (1 nomor per baris).",
+        parse_mode="Markdown"
+    )
     return WAITING_INPUT_METHOD
 
 async def handle_input_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -138,13 +142,16 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_path = os.path.join(tempfile.gettempdir(), document.file_name)
     telegram_file = await context.bot.get_file(document.file_id)
     await telegram_file.download_to_drive(custom_path=file_path)
+
     with open(file_path, 'r', encoding='utf-8') as f:
         raw_lines = [line.strip() for line in f if line.strip()]
     os.remove(file_path)
+
     numbers = [line for line in raw_lines if is_valid_phone(line)]
     if not numbers:
         await update.message.reply_text("❌ Tidak ditemukan nomor telepon yang valid.")
         return WAITING_INPUT_METHOD
+
     return await process_numbers(update, context, numbers)
 
 async def handle_numbers_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -262,6 +269,7 @@ async def run_bot():
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("adduser", add_to_whitelist))
     app.add_error_handler(error_handler)
+
     await app.run_polling()
 
 # === START ===
