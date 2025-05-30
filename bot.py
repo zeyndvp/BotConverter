@@ -19,7 +19,7 @@ OWNER_ID = 7238904265
 bot_status = "✅ Bot Telegram aktif dan siap digunakan."
 
 # === Koneksi MongoDB ===
-MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://zeyndevv:zeyn123663@@cluster0.vt3xi.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://zeyndevv:zeyn123663@cluster0.vt3xi.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 client = MongoClient(MONGO_URI)
 db = client["vcf_bot"]
 whitelist_col = db["whitelist"]
