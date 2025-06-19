@@ -98,8 +98,7 @@ async def handle_vcf_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Tidak ditemukan data kontak dalam file.")
         return ConversationHandler.END
 
-    txt_output = "
-".join(output_lines)
+    txt_output = "".join(output_lines)
     txt_filename = "converted.txt"
     txt_path = os.path.join(tempfile.gettempdir(), txt_filename)
 
