@@ -1,3 +1,4 @@
+
 import os
 import re
 import json
@@ -14,7 +15,7 @@ from telegram.ext import (
 from pymongo import MongoClient
 
 # === Konstanta dan Status ===
-WAITING_FILENAME, WAITING_CONTACTNAME, WAITING_CHUNK_SIZE, WAITING_START_NUMBER, WAITING_INPUT_METHOD = range(5)
+WAITING_FILENAME, WAITING_CONTACTNAME, WAITING_CHUNK_SIZE, WAITING_START_NUMBER, WAITING_INPUT_METHOD, WAITING_VCF_FILE = range(6)
 OWNER_ID = 7238904265
 bot_status = "✅ Bot Telegram aktif dan siap digunakan."
 
@@ -234,7 +235,6 @@ async def add_to_whitelist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         await update.message.reply_text("⚠️ Gunakan format: /adduser <id_telegram>")
 
-# === Command: /cekuser ===
 async def check_user_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     status = (
@@ -243,6 +243,57 @@ async def check_user_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ Whitelisted: {'Ya' if is_whitelisted(user_id) else 'Tidak'}"
     )
     await update.message.reply_text(status, parse_mode="Markdown")
+
+async def start_vcf_to_txt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not is_whitelisted(user_id):
+        await update.message.reply_text("❌ Kamu tidak diizinkan menggunakan fitur ini.")
+        return ConversationHandler.END
+    await update.message.reply_text("📤 Kirim file `.vcf` yang ingin kamu ubah menjadi `.txt`.")
+    return WAITING_VCF_FILE
+
+async def handle_vcf_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    document: Document = update.message.document
+    if not document.file_name.endswith(".vcf"):
+        await update.message.reply_text("⚠️ File yang dikirim bukan file .vcf.")
+        return WAITING_VCF_FILE
+
+    file_path = os.path.join(tempfile.gettempdir(), document.file_name)
+    telegram_file = await context.bot.get_file(document.file_id)
+    await telegram_file.download_to_drive(custom_path=file_path)
+
+    output_lines = []
+
+    with open(file_path, 'r', encoding='utf-8') as f:
+        name, phone = None, None
+        for line in f:
+            if line.startswith("FN:"):
+                name = line.strip().replace("FN:", "")
+            elif line.startswith("TEL"):
+                phone = line.strip().split(":")[-1]
+                if name and phone:
+                    output_lines.append(f"{name} - {phone}")
+                    name, phone = None, None
+
+    os.remove(file_path)
+
+    if not output_lines:
+        await update.message.reply_text("❌ Tidak ditemukan data kontak dalam file.")
+        return ConversationHandler.END
+
+    txt_output = "\n".join(output_lines)
+    txt_filename = "converted_contacts.txt"
+    txt_path = os.path.join(tempfile.gettempdir(), txt_filename)
+
+    with open(txt_path, 'w', encoding='utf-8') as f:
+        f.write(txt_output)
+
+    with open(txt_path, 'rb') as f:
+        await update.message.reply_document(document=f, filename=txt_filename)
+    os.remove(txt_path)
+
+    await update.message.reply_text("✅ File berhasil dikonversi!")
+    return ConversationHandler.END
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     print(f"⚠️ ERROR: {context.error}")
@@ -261,6 +312,7 @@ async def run_bot():
             WAITING_CHUNK_SIZE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_chunk_size)],
             WAITING_START_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_start_number)],
             WAITING_INPUT_METHOD: [MessageHandler(filters.ALL, handle_input_method)],
+            WAITING_VCF_FILE: [MessageHandler(filters.Document.ALL, handle_vcf_file)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
@@ -268,6 +320,7 @@ async def run_bot():
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("adduser", add_to_whitelist))
     app.add_handler(CommandHandler("cekuser", check_user_status))
+    app.add_handler(CommandHandler("vcftotxt", start_vcf_to_txt))
     app.add_error_handler(error_handler)
     await app.run_polling()
 
