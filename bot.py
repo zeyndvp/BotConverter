@@ -1,10 +1,15 @@
+
+# Final Bot Telegram dengan fitur lengkap dan kontrol akses whitelist vs owner
+# Fitur: /start (buat VCF), /vcftotxt, /adduser, /deluser, /cekuser
+
 import os
 import re
 import asyncio
 import tempfile
+import zipfile
 import phonenumbers
 import gradio as gr
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, Document, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     CallbackQueryHandler, filters, ContextTypes, ConversationHandler
@@ -43,10 +48,11 @@ def is_valid_phone(number: str) -> bool:
     except phonenumbers.NumberParseException:
         return False
 
+# === FITUR START ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_whitelisted(user_id):
-        await update.message.reply_text(f"🚸 Kamu tidak diizinkan menggunakan bot ini.\n🆔 ID kamu: `{user_id}`", parse_mode="Markdown")
+        await update.message.reply_text("🚫 Kamu tidak diizinkan menggunakan bot ini.\n🆔 ID kamu: `{}`".format(user_id), parse_mode="Markdown")
         return ConversationHandler.END
 
     await update.message.reply_text("📝 Masukkan *nama dasar file VCF* (tanpa .vcf):", parse_mode="Markdown")
@@ -75,11 +81,11 @@ async def get_contactname(update: Update, context: ContextTypes.DEFAULT_TYPE):
             count = int(parts[i+1])
             contact_plan.append((name, count))
         except:
-            await update.message.reply_text(f"⚠️ Format salah di bagian: {parts[i]} | {parts[i+1]}")
+            await update.message.reply_text("⚠️ Format salah di bagian: {} | {}".format(parts[i], parts[i+1]))
             return WAITING_CONTACTNAME
 
     context.user_data["contact_plan"] = contact_plan
-    await update.message.reply_text("📏 Masukkan jumlah *nomor per file VCF* (misal: 100):", parse_mode="Markdown")
+    await update.message.reply_text("🔢 Masukkan jumlah *nomor per file VCF* (misal: 100):", parse_mode="Markdown")
     return WAITING_CHUNK_SIZE
 
 async def get_chunk_size(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -91,7 +97,7 @@ async def get_chunk_size(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Masukkan angka yang valid.")
         return WAITING_CHUNK_SIZE
     context.user_data["chunk_size"] = chunk_size
-    await update.message.reply_text("📏 Masukkan nomor awal untuk penomoran *file VCF* (misal: 1):")
+    await update.message.reply_text("🔢 Masukkan nomor awal untuk penomoran *file VCF* (misal: 1):")
     return WAITING_START_NUMBER
 
 async def get_start_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -104,7 +110,11 @@ async def get_start_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return WAITING_START_NUMBER
 
     context.user_data["start_number"] = start_number
-    await update.message.reply_text("📥 Kirim file .txt berisi daftar nomor atau ketik langsung di chat:", parse_mode="Markdown")
+    await update.message.reply_text(
+        "📥 Sekarang kirim daftar nomor:\n\n"
+        "1. Kirim *file .txt*\n"
+        "2. Atau langsung ketik/forward di chat (1 nomor per baris).",
+        parse_mode="Markdown")
     return WAITING_INPUT_METHOD
 
 async def handle_input_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -163,8 +173,8 @@ async def process_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE, nu
         if not number.startswith("+"):
             number = "+" + number
 
-        name = f"{current_name} {contact_counter}"
-        vcf_entry = f"BEGIN:VCARD\nVERSION:3.0\nFN:{name}\nTEL;TYPE=CELL:{number}\nEND:VCARD\n"
+        name = "{} {}".format(current_name, contact_counter)
+        vcf_entry = "BEGIN:VCARD\nVERSION:3.0\nFN:{}\nTEL;TYPE=CELL:{}\nEND:VCARD\n".format(name, number)
         vcf_content += vcf_entry
         contact_counter += 1
         remaining -= 1
@@ -175,7 +185,7 @@ async def process_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE, nu
             contact_counter = 1
 
         if i % chunk_size == 0 or i == len(numbers):
-            vcf_filename = f"{base_name}_{file_counter}.vcf"
+            vcf_filename = "{}_{}.vcf".format(base_name, file_counter)
             vcf_path = os.path.join(tempfile.gettempdir(), vcf_filename)
             with open(vcf_path, 'w', encoding='utf-8') as f:
                 f.write(vcf_content)
@@ -193,44 +203,159 @@ async def process_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE, nu
     await update.message.reply_text("✅ Semua file berhasil dibuat dan dikirim!")
     return ConversationHandler.END
 
+# === FITUR VCF TO TXT ===
+async def start_vcf_to_txt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_whitelisted(update.effective_user.id):
+        await update.message.reply_text("❌ Kamu tidak diizinkan menggunakan fitur ini.")
+        return ConversationHandler.END
+
+    keyboard = [
+        [InlineKeyboardButton("📛 Nama & Nomor", callback_data="with_name")],
+        [InlineKeyboardButton("📱 Nomor Saja", callback_data="number_only")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Pilih format output TXT:", reply_markup=reply_markup)
+    return WAITING_VCF_OPTION
+
+async def choose_vcf_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data["vcf_output_mode"] = query.data
+    await query.edit_message_text("📤 Silakan kirim file `.vcf` yang ingin dikonversi.")
+    return WAITING_VCF_FILE
+
+async def handle_vcf_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    document = update.message.document
+    if not document.file_name.endswith(".vcf"):
+        await update.message.reply_text("⚠️ File yang dikirim bukan file .vcf.")
+        return WAITING_VCF_FILE
+
+    file_path = os.path.join(tempfile.gettempdir(), document.file_name)
+    telegram_file = await context.bot.get_file(document.file_id)
+    await telegram_file.download_to_drive(custom_path=file_path)
+
+    output_lines = []
+    with open(file_path, 'r', encoding='utf-8') as f:
+        name, phone = None, None
+        for line in f:
+            if line.startswith("FN:"):
+                name = line.strip().replace("FN:", "")
+            elif line.startswith("TEL"):
+                phone = line.strip().split(":")[-1]
+                if phone:
+                    if context.user_data.get("vcf_output_mode") == "with_name" and name:
+                        output_lines.append("{} - {}".format(name, phone))
+                    else:
+                        output_lines.append(phone)
+                    name, phone = None, None
+
+    os.remove(file_path)
+
+    if not output_lines:
+        await update.message.reply_text("❌ Tidak ditemukan data kontak dalam file.")
+        return ConversationHandler.END
+
+    txt_output = "\n".join(output_lines)
+    txt_path = os.path.join(tempfile.gettempdir(), "converted.txt")
+    with open(txt_path, 'w', encoding='utf-8') as f:
+        f.write(txt_output)
+
+    with open(txt_path, 'rb') as f:
+        await update.message.reply_document(document=f, filename="converted.txt")
+    os.remove(txt_path)
+    await update.message.reply_text("✅ File berhasil dikonversi!")
+    return ConversationHandler.END
+
+# === WHITELIST CONTROL ===
+async def add_to_whitelist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_owner(update.effective_user.id):
+        await update.message.reply_text("❌ Hanya owner yang bisa menambah whitelist.")
+        return
+    try:
+        new_user_id = int(context.args[0])
+        add_to_whitelist_db(new_user_id)
+        await update.message.reply_text("✅ User ID {} berhasil ditambahkan ke whitelist.".format(new_user_id))
+    except:
+        await update.message.reply_text("⚠️ Gunakan format: /adduser <id_telegram>")
+
+async def delete_from_whitelist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_owner(update.effective_user.id):
+        await update.message.reply_text("❌ Hanya owner yang bisa menghapus whitelist.")
+        return
+    try:
+        target_user_id = int(context.args[0])
+        remove_from_whitelist_db(target_user_id)
+        await update.message.reply_text("🗑️ User ID {} berhasil dihapus dari whitelist.".format(target_user_id))
+    except:
+        await update.message.reply_text("⚠️ Gunakan format: /deluser <id_telegram>")
+
+async def check_user_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    status = "🆔 ID kamu: `{}`\n👑 Owner: {}\n✅ Whitelisted: {}".format(
+        user_id,
+        "Ya" if is_owner(user_id) else "Tidak",
+        "Ya" if is_whitelisted(user_id) else "Tidak"
+    )
+    await update.message.reply_text(status, parse_mode="Markdown")
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ Operasi dibatalkan.")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    print("⚠️ ERROR: {}".format(context.error))
+
+async def run_bot():
+    TOKEN = os.getenv("BOT_TOKEN")
+    if not TOKEN:
+        raise ValueError("❌ BOT_TOKEN tidak ditemukan di environment variable.")
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            WAITING_FILENAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_filename)],
+            WAITING_CONTACTNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_contactname)],
+            WAITING_CHUNK_SIZE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_chunk_size)],
+            WAITING_START_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_start_number)],
+            WAITING_INPUT_METHOD: [MessageHandler(filters.ALL, handle_input_method)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
+    vcf_to_txt_conv = ConversationHandler(
+        entry_points=[CommandHandler("vcftotxt", start_vcf_to_txt)],
+        states={
+            WAITING_VCF_OPTION: [CallbackQueryHandler(choose_vcf_option)],
+            WAITING_VCF_FILE: [MessageHandler(filters.Document.ALL, handle_vcf_file)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
+    app.add_handler(conv_handler)
+    app.add_handler(vcf_to_txt_conv)
+    app.add_handler(CommandHandler("adduser", add_to_whitelist))
+    app.add_handler(CommandHandler("deluser", delete_from_whitelist))
+    app.add_handler(CommandHandler("cekuser", check_user_status))
+    app.add_error_handler(error_handler)
+    await app.run_polling()
+
 if __name__ == "__main__":
     import nest_asyncio
     nest_asyncio.apply()
 
     async def main():
-        TOKEN = os.getenv("BOT_TOKEN")
-        if not TOKEN:
-            raise ValueError("BOT_TOKEN tidak ditemukan di environment.")
-
-        app = ApplicationBuilder().token(TOKEN).build()
-
-        conv_handler = ConversationHandler(
-            entry_points=[CommandHandler("start", start)],
-            states={
-                WAITING_FILENAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_filename)],
-                WAITING_CONTACTNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_contactname)],
-                WAITING_CHUNK_SIZE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_chunk_size)],
-                WAITING_START_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_start_number)],
-                WAITING_INPUT_METHOD: [MessageHandler(filters.ALL, handle_input_method)],
-            },
-            fallbacks=[]
-        )
-
-        app.add_handler(conv_handler)
-        await app.initialize()
-
+        bot_task = asyncio.create_task(run_bot())
         gradio_interface = gr.Interface(
             fn=lambda: bot_status,
             inputs=[],
             outputs="text",
-            title="Status Bot Telegram"
+            title="Status Bot Telegram",
+            live=False,
+            flagging_mode="never"
         )
-
-        async def run_all():
-            bot_task = asyncio.create_task(app.run_polling())
-            gradio_task = asyncio.to_thread(gradio_interface.launch, server_name="0.0.0.0", server_port=7860)
-            await asyncio.gather(bot_task, gradio_task)
-
-        await run_all()
+        gradio_task = asyncio.to_thread(gradio_interface.launch, server_name="0.0.0.0", server_port=7860, share=False)
+        await asyncio.gather(bot_task, gradio_task)
 
     asyncio.run(main())
