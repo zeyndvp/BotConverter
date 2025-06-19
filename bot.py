@@ -50,13 +50,16 @@ def is_valid_phone(number: str) -> bool:
 
 # === FITUR START ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if not is_whitelisted(user_id):
-        await update.message.reply_text("🚫 Kamu tidak diizinkan menggunakan bot ini.\n🆔 ID kamu: `{}`".format(user_id), parse_mode="Markdown")
-        return ConversationHandler.END
+    user_id = update.effective_user.id
+    print(f"🧪 start() dipanggil oleh: {user_id}, is_owner: {is_owner(user_id)}, is_whitelisted: {is_whitelisted(user_id)}")
 
-    await update.message.reply_text("📝 Masukkan *nama dasar file VCF* (tanpa .vcf):", parse_mode="Markdown")
-    return WAITING_FILENAME
+    if not (is_whitelisted(user_id) or is_owner(user_id)):
+        await update.message.reply_text("🚫 Kamu tidak diizinkan menggunakan bot ini.\n🆔 ID kamu: `{}`".format(user_id), parse_mode="Markdown")
+        return ConversationHandler.END
+
+    await update.message.reply_text("📝 Masukkan *nama dasar file VCF* (tanpa .vcf):", parse_mode="Markdown")
+    return WAITING_FILENAME
+
 
 async def get_filename(update: Update, context: ContextTypes.DEFAULT_TYPE):
     filename = update.message.text.strip()
