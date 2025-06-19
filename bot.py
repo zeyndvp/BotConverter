@@ -15,7 +15,7 @@ WAITING_FILENAME, WAITING_CONTACTNAME, WAITING_CHUNK_SIZE, WAITING_START_NUMBER,
 OWNER_ID = 7238904265
 bot_status = "✅ Bot Telegram aktif dan siap digunakan."
 
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://zeyndevv:zeyn123663@cluster0.vt3xi.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 client = MongoClient(MONGO_URI)
 db = client["vcf_bot"]
 whitelist_col = db["whitelist"]
