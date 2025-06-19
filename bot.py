@@ -13,18 +13,15 @@ from telegram.ext import (
 )
 from pymongo import MongoClient
 
-# === Konstanta dan Status ===
-WAITING_FILENAME, WAITING_CONTACTNAME, WAITING_CHUNK_SIZE, WAITING_START_NUMBER, WAITING_INPUT_METHOD, WAITING_VCF_FILE, WAITING_VCF_OPTION = range(7)
+WAITING_VCF_FILE, WAITING_VCF_OPTION = range(2)
 OWNER_ID = 7238904265
 bot_status = "✅ Bot Telegram aktif dan siap digunakan."
 
-# === Koneksi MongoDB ===
 MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://zeyndevv:zeyn123663@cluster0.vt3xi.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 client = MongoClient(MONGO_URI)
 db = client["vcf_bot"]
 whitelist_col = db["whitelist"]
 
-# === Fungsi Whitelist ===
 def is_owner(user_id):
     return int(user_id) == OWNER_ID
 
@@ -35,7 +32,9 @@ def add_to_whitelist_db(user_id: int):
     if not is_whitelisted(user_id):
         whitelist_col.insert_one({"user_id": int(user_id)})
 
-# === Fungsi Validasi Nomor ===
+def remove_from_whitelist_db(user_id: int):
+    whitelist_col.delete_one({"user_id": int(user_id)})
+
 def is_valid_phone(number: str) -> bool:
     try:
         number = number.strip()
@@ -46,7 +45,6 @@ def is_valid_phone(number: str) -> bool:
     except phonenumbers.NumberParseException:
         return False
 
-# === VCF to TXT ===
 async def start_vcf_to_txt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_whitelisted(update.effective_user.id):
         await update.message.reply_text("❌ Kamu tidak diizinkan menggunakan fitur ini.")
@@ -87,7 +85,7 @@ async def handle_vcf_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 phone = line.strip().split(":")[-1]
                 if phone:
                     if context.user_data.get("vcf_output_mode") == "with_name" and name:
-                        output_lines.append(f"{name} - {phone}")
+                        output_lines.append("{} - {}".format(name, phone))
                     else:
                         output_lines.append(phone)
                     name, phone = None, None
@@ -98,7 +96,7 @@ async def handle_vcf_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Tidak ditemukan data kontak dalam file.")
         return ConversationHandler.END
 
-    txt_output = "".join(output_lines)
+    txt_output = "\n".join(output_lines)
     txt_filename = "converted.txt"
     txt_path = os.path.join(tempfile.gettempdir(), txt_filename)
 
@@ -112,7 +110,6 @@ async def handle_vcf_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ File berhasil dikonversi!")
     return ConversationHandler.END
 
-# === Whitelist ===
 async def add_to_whitelist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update.effective_user.id):
         await update.message.reply_text("❌ Hanya owner yang bisa menambah whitelist.")
@@ -120,18 +117,27 @@ async def add_to_whitelist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         new_user_id = int(context.args[0])
         add_to_whitelist_db(new_user_id)
-        await update.message.reply_text(f"✅ User ID {new_user_id} berhasil ditambahkan ke whitelist.")
+        await update.message.reply_text("✅ User ID {} berhasil ditambahkan ke whitelist.".format(new_user_id))
     except:
         await update.message.reply_text("⚠️ Gunakan format: /adduser <id_telegram>")
 
+async def delete_from_whitelist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_owner(update.effective_user.id):
+        await update.message.reply_text("❌ Hanya owner yang bisa menghapus whitelist.")
+        return
+    try:
+        target_user_id = int(context.args[0])
+        remove_from_whitelist_db(target_user_id)
+        await update.message.reply_text("🗑️ User ID {} berhasil dihapus dari whitelist.".format(target_user_id))
+    except:
+        await update.message.reply_text("⚠️ Gunakan format: /deluser <id_telegram>")
+
 async def check_user_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    status = (
-        f"🆔 ID kamu: `{user_id}`
-"
-        f"👑 Owner: {'Ya' if is_owner(user_id) else 'Tidak'}
-"
-        f"✅ Whitelisted: {'Ya' if is_whitelisted(user_id) else 'Tidak'}"
+    status = "🆔 ID kamu: `{}`\n👑 Owner: {}\n✅ Whitelisted: {}".format(
+        user_id,
+        "Ya" if is_owner(user_id) else "Tidak",
+        "Ya" if is_whitelisted(user_id) else "Tidak"
     )
     await update.message.reply_text(status, parse_mode="Markdown")
 
@@ -141,7 +147,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    print(f"⚠️ ERROR: {context.error}")
+    print("⚠️ ERROR: {}".format(context.error))
 
 async def run_bot():
     TOKEN = os.getenv("BOT_TOKEN")
@@ -160,11 +166,11 @@ async def run_bot():
 
     app.add_handler(vcf_to_txt_conv)
     app.add_handler(CommandHandler("adduser", add_to_whitelist))
+    app.add_handler(CommandHandler("deluser", delete_from_whitelist))
     app.add_handler(CommandHandler("cekuser", check_user_status))
     app.add_error_handler(error_handler)
     await app.run_polling()
 
-# === START ===
 if __name__ == "__main__":
     import nest_asyncio
     nest_asyncio.apply()
