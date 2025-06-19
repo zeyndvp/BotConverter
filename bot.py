@@ -26,14 +26,14 @@ whitelist_col = db["whitelist"]
 
 # === Fungsi Whitelist ===
 def is_owner(user_id):
-    return user_id == OWNER_ID
+    return int(user_id) == OWNER_ID
 
 def is_whitelisted(user_id):
-    return whitelist_col.find_one({"user_id": user_id}) is not None or is_owner(user_id)
+    return whitelist_col.find_one({"user_id": int(user_id)}) is not None or is_owner(user_id)
 
 def add_to_whitelist_db(user_id: int):
     if not is_whitelisted(user_id):
-        whitelist_col.insert_one({"user_id": user_id})
+        whitelist_col.insert_one({"user_id": int(user_id)})
 
 # === Fungsi Validasi Nomor ===
 def is_valid_phone(number: str) -> bool:
@@ -234,6 +234,16 @@ async def add_to_whitelist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         await update.message.reply_text("⚠️ Gunakan format: /adduser <id_telegram>")
 
+# === Command: /cekuser ===
+async def check_user_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    status = (
+        f"🆔 ID kamu: `{user_id}`\n"
+        f"👑 Owner: {'Ya' if is_owner(user_id) else 'Tidak'}\n"
+        f"✅ Whitelisted: {'Ya' if is_whitelisted(user_id) else 'Tidak'}"
+    )
+    await update.message.reply_text(status, parse_mode="Markdown")
+
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     print(f"⚠️ ERROR: {context.error}")
 
@@ -257,6 +267,7 @@ async def run_bot():
 
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("adduser", add_to_whitelist))
+    app.add_handler(CommandHandler("cekuser", check_user_status))
     app.add_error_handler(error_handler)
     await app.run_polling()
 
