@@ -331,6 +331,7 @@ async def run_bot():
             WAITING_VCF_FILE: [MessageHandler(filters.Document.ALL, handle_vcf_file)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=True,
     )
 
     app.add_handler(conv_handler)
@@ -356,8 +357,7 @@ if __name__ == "__main__":
             flagging_mode="never"
         ).launch(server_name="0.0.0.0", server_port=7860, share=False)
 
-    # Jalankan Gradio di thread terpisah
     threading.Thread(target=launch_gradio).start()
 
-    # Jalankan bot telegram di event loop utama
-    asyncio.run(run_bot())
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(run_bot())
