@@ -306,8 +306,11 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     print("⚠️ ERROR: {}".format(context.error))
 
+
 async def run_bot():
     TOKEN = os.getenv("BOT_TOKEN")
+    print("✅ BOT_TOKEN =", repr(TOKEN))  # DEBUG CEK TOKEN
+
     if not TOKEN:
         raise ValueError("❌ BOT_TOKEN tidak ditemukan di environment variable.")
     app = ApplicationBuilder().token(TOKEN).build()
@@ -339,8 +342,9 @@ async def run_bot():
     app.add_handler(CommandHandler("deluser", delete_from_whitelist))
     app.add_handler(CommandHandler("cekuser", check_user_status))
     app.add_error_handler(error_handler)
-    await app.run_polling()
 
+    # ✅ FIXED: biarkan loop utama tetap hidup
+    await app.run_polling(stop_signals=None)
 
 if __name__ == "__main__":
     import nest_asyncio
@@ -360,6 +364,6 @@ if __name__ == "__main__":
     # Jalankan Gradio di thread terpisah
     threading.Thread(target=launch_gradio).start()
 
-    # Jalankan bot Telegram di event loop yang dipatch oleh nest_asyncio
+    # Jalankan bot Telegram di event loop yang sudah dipatch
     loop = asyncio.get_event_loop()
     loop.run_until_complete(run_bot())
