@@ -343,19 +343,21 @@ async def run_bot():
 
 if __name__ == "__main__":
     import nest_asyncio
+    import threading
     nest_asyncio.apply()
 
-    async def main():
-        bot_task = asyncio.create_task(run_bot())
-        gradio_interface = gr.Interface(
+    def launch_gradio():
+        gr.Interface(
             fn=lambda: bot_status,
             inputs=[],
             outputs="text",
             title="Status Bot Telegram",
             live=False,
             flagging_mode="never"
-        )
-        gradio_task = asyncio.to_thread(gradio_interface.launch, server_name="0.0.0.0", server_port=7860, share=False)
-        await asyncio.gather(bot_task, gradio_task)
+        ).launch(server_name="0.0.0.0", server_port=7860, share=False)
 
-    asyncio.run(main())
+    # Jalankan Gradio di thread terpisah
+    threading.Thread(target=launch_gradio).start()
+
+    # Jalankan bot telegram di event loop utama
+    asyncio.run(run_bot())
