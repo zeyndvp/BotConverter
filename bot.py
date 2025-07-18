@@ -1,4 +1,7 @@
 
+# Final Bot Telegram dengan fitur lengkap dan kontrol akses whitelist vs owner
+# Fitur: /start (buat VCF), /vcftotxt, /adduser, /deluser, /cekuser
+
 import os
 import re
 import asyncio
@@ -6,41 +9,46 @@ import tempfile
 import zipfile
 import phonenumbers
 import gradio as gr
-import threading
-import nest_asyncio
-
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, Document, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     CallbackQueryHandler, filters, ContextTypes, ConversationHandler
 )
 from pymongo import MongoClient
 
-# ===== Konstanta & DB =====
 WAITING_FILENAME, WAITING_CONTACTNAME, WAITING_CHUNK_SIZE, WAITING_START_NUMBER, WAITING_INPUT_METHOD, WAITING_VCF_FILE, WAITING_VCF_OPTION = range(7)
 OWNER_ID = 7238904265
 bot_status = "✅ Bot Telegram aktif dan siap digunakan."
+
 MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://zeyndevv:zeyn123663@cluster0.vt3xi.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 client = MongoClient(MONGO_URI)
 db = client["vcf_bot"]
 whitelist_col = db["whitelist"]
 
-# ===== Helper =====
-def is_owner(user_id): return int(user_id) == OWNER_ID
-def is_whitelisted(user_id): return whitelist_col.find_one({"user_id": int(user_id)}) or is_owner(user_id)
-def add_to_whitelist_db(user_id: int): 
-    if not is_whitelisted(user_id): whitelist_col.insert_one({"user_id": int(user_id)})
-def remove_from_whitelist_db(user_id: int): whitelist_col.delete_one({"user_id": int(user_id)})
+def is_owner(user_id):
+    return int(user_id) == OWNER_ID
+
+def is_whitelisted(user_id):
+    return whitelist_col.find_one({"user_id": int(user_id)}) is not None or is_owner(user_id)
+
+def add_to_whitelist_db(user_id: int):
+    if not is_whitelisted(user_id):
+        whitelist_col.insert_one({"user_id": int(user_id)})
+
+def remove_from_whitelist_db(user_id: int):
+    whitelist_col.delete_one({"user_id": int(user_id)})
+
 def is_valid_phone(number: str) -> bool:
     try:
         number = number.strip()
-        if not number.startswith("+"): number = "+" + number
+        if not number.startswith("+"):
+            number = "+" + number
         parsed = phonenumbers.parse(number, None)
         return phonenumbers.is_valid_number(parsed)
     except phonenumbers.NumberParseException:
         return False
 
-# ===== Fitur utama (potongan, tidak diubah) =====
+# === FITUR START ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_whitelisted(user_id):
@@ -298,17 +306,11 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     print("⚠️ ERROR: {}".format(context.error))
 
-# ===== Run Bot =====
 async def run_bot():
     TOKEN = os.getenv("BOT_TOKEN")
     if not TOKEN:
         raise ValueError("❌ BOT_TOKEN tidak ditemukan di environment variable.")
     app = ApplicationBuilder().token(TOKEN).build()
-
-    from telegram.ext import CommandHandler, MessageHandler, CallbackQueryHandler, ConversationHandler
-
-    # Import handler fungsinya dari kode asli pengguna
-    from bot_handlers import *
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -339,19 +341,25 @@ async def run_bot():
     app.add_error_handler(error_handler)
     await app.run_polling()
 
-# ===== Main Runner =====
-def start_gradio():
-    gr.Interface(
-        fn=lambda: bot_status,
-        inputs=[],
-        outputs="text",
-        title="Status Bot Telegram",
-        live=False,
-        flagging_mode="never"
-    ).launch(server_name="0.0.0.0", server_port=7860, share=False)
 
 if __name__ == "__main__":
+    import nest_asyncio
+    import threading
     nest_asyncio.apply()
-    threading.Thread(target=start_gradio).start()
+
+    def launch_gradio():
+        gr.Interface(
+            fn=lambda: bot_status,
+            inputs=[],
+            outputs="text",
+            title="Status Bot Telegram",
+            live=False,
+            flagging_mode="never"
+        ).launch(server_name="0.0.0.0", server_port=7860, share=False)
+
+    # Jalankan Gradio di thread terpisah
+    threading.Thread(target=launch_gradio).start()
+
+    # Jalankan bot Telegram di event loop yang dipatch oleh nest_asyncio
     loop = asyncio.get_event_loop()
     loop.run_until_complete(run_bot())
